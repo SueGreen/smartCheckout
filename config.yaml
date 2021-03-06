@@ -1,0 +1,6 @@
+model:
+  path: 'fasterrcnn_resnet50_fpn.pth'
+  csv_path: 'rpc_train_dataframe_super.csv'
+  im_h: 128
+  im_w: 128
+  det_threshold: 0.7
