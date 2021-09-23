@@ -1,4 +1,4 @@
-# To start app type uvicorn api:app --reload in bash
+# To start app type unicorn api:app --reload in bash
 
 from pathlib import Path
 
@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from yaml import load
 
-from utils import get_model, text_label
+from utils.utils import get_model, text_label
 
 app = FastAPI()
 
