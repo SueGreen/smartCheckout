@@ -1,21 +1,13 @@
-import time
 import warnings
 from pathlib import Path
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import seaborn as sns
 import torch
-from albumentations import BboxParams, Compose, OneOf, Resize, RGBShift, \
-    RandomBrightnessContrast, Normalize, ShiftScaleRotate, Blur, ColorJitter, RandomGamma, \
-    Cutout
 from albumentations.augmentations.bbox_utils import convert_bbox_from_albumentations
-from albumentations.augmentations.transforms import Equalize
-from albumentations.pytorch import ToTensorV2
 from sklearn.metrics import auc
-from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
@@ -237,7 +229,7 @@ class ProductDataset(Dataset):
         return tuple(zip(*batch))
 
 
-class Trainer():
+class ProductDetectionTrainer():
     def __init__(self):
         pass
 
@@ -346,14 +338,14 @@ class Trainer():
         precision = np.zeros(len(results))
 
         if results is not None:
-            if results[0]["TP"] == 1:
+            if results[0].get("TP") == 1:
                 acc_TP[0] = 1
             else:
                 acc_FP[0] = 1
 
         for i in range(1, len(results)):
-            acc_TP[i] = results[i]["TP"] + acc_TP[i - 1]
-            acc_FP[i] = (1 - results[i]["TP"]) + acc_FP[i - 1]
+            acc_TP[i] = results[i].get("TP") + acc_TP[i - 1]
+            acc_FP[i] = (1 - results[i].get("TP")) + acc_FP[i - 1]
 
             precision[i] = acc_TP[i] / (acc_TP[i] + acc_FP[i])
             recall[i] = acc_TP[i] / nbr_boxes
@@ -379,8 +371,10 @@ class Trainer():
             if scheduler is not None:
                 scheduler.step()  # Cyclic LRs after each batch
             running_loss += loss.item()
-            pbar.set_description_str(f'Iteration #{i}. Loss: {running_loss / (i + 1):.3f}',
-                                     refresh=False)
+            pbar.set_description_str(f'Iteration #{i}. Loss: {loss.item() / (i + 1):.3f}. '
+                                     f'Avg loss: {running_loss / (i + 1):.3f}',
+                                     refresh=True)
+            print(f'Iteration #{i}. Loss: {loss.item() / (i + 1):.3f}. Avg loss: {running_loss / (i + 1):.3f}')
         train_loss = running_loss / len(train_dataloader.dataset)
         return train_loss
 
@@ -412,93 +406,3 @@ class Trainer():
             ax.set_axis_off()
             plt.imshow(sample)
             plt.show()
-
-
-def main():
-    # ### Read and preprocessed the data
-    data_path = Path('../data')
-    csv_path = Path('../data/rpc_train_dataframe_super_tiny.csv')
-    data = pd.read_csv(csv_path)
-    num_classes = data['labels'].nunique()
-    # # data = pd.read_csv(csv_path, index_col=0)
-    # # data.rename(columns={'supercategory_id': 'labels'}, inplace=True)
-    # # data.rename(columns={'bbox': 'bboxes'}, inplace=True)
-    # # data.set_index('image_id', inplace=True)
-    train_data, val_data = train_test_split(data, test_size=0.1, shuffle=True, random_state=seed)
-
-    image_height, image_width = 128, 128
-    dataset_format = 'pascal_voc'
-    bbox_params = BboxParams(format=dataset_format,
-                             min_visibility=0.3,
-                             label_fields=['labels'])
-    train_augment = Compose([
-        OneOf([
-            RGBShift(r_shift_limit=15, g_shift_limit=15,
-                     b_shift_limit=15, p=0.5),
-            RandomBrightnessContrast(brightness_limit=0.1,
-                                     contrast_limit=0.05),
-            Equalize(p=0.1),
-            RandomGamma(p=0.5),
-            ColorJitter(p=0.5),
-        ], p=0.9),
-        OneOf([
-            ShiftScaleRotate(shift_limit=0.1625,
-                             scale_limit=0.1,
-                             rotate_limit=20,
-                             interpolation=1,
-                             border_mode=4, p=0.9),
-        ], p=0.6),
-
-        OneOf([
-            Blur(blur_limit=3, p=0.1),
-            Cutout(num_holes=8, max_h_size=5,
-                   max_w_size=5, fill_value=0, p=0.3),
-
-        ], p=0.2),
-    ],
-        bbox_params=bbox_params)
-    transform = Compose([
-        Resize(image_height, image_width),
-        Normalize(mean=(0, 0, 0), std=(1, 1, 1)),
-        ToTensorV2(),
-    ], bbox_params=bbox_params)
-    train_dataset = ProductDataset(data_path / 'train2019', train_data,
-                                   augment=train_augment, transform=transform, dataset_format=dataset_format)
-    val_dataset = ProductDataset(data_path / 'train2019', val_data,
-                                 augment=None, transform=transform, dataset_format=dataset_format)
-    # train_dataset.show_dataset(sample_size=4, n=3)
-    # val_dataset.show_dataset(sample_size=2, n=1)
-
-    BATCH_SIZE = 2
-    train_dataloader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2,
-        collate_fn=train_dataset.collate_fn)
-    val_dataloader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2,
-        collate_fn=val_dataset.collate_fn)
-
-    # print(len(train_dataloader), len(train_dataset))
-    # print(len(val_dataloader), len(val_dataset))
-
-    ## Train a model
-    trainer = Trainer()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print(f"device is {device}")
-    model = trainer.get_detection_model(num_classes + 1, pretrained=True).to(device)
-    params = [v for k, v in model.named_parameters() if v.requires_grad]
-    max_lr = 1e-1
-    optimizer = torch.optim.SGD(params, lr=max_lr, momentum=0.9, weight_decay=0.0005)
-
-    n_epochs = 5
-    experiment_n = 1
-
-    for epoch in range(n_epochs):
-        start = time.time()
-        train_loss = trainer.train(model, optimizer, train_dataloader, device, scheduler=None)
-        print(f"Epoch #{epoch} loss: {train_loss}")
-        end = time.time()
-        print(f"Epoch {epoch} took {(end - start) / 60} minutes")
-    trainer.save_model(model, f'saved_models/{experiment_n}fasterrcnn_resnet50_fpn_{n_epochs}_epoch.pth')
-
-
-main()
