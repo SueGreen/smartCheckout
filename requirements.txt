@@ -15,3 +15,14 @@ torch==1.8.0
 torchvision==0.9.0
 typing-extensions==3.7.4.3
 win32-setctime==1.0.3
+pytorch-lightning==1.4.5
+matplotlib
+seaborn
+sklearn
+jupyter
+tqdm
+opencv-python
+albumentations
+kaggle==1.5.12
+uvicorn
+pytest==6.2.5
