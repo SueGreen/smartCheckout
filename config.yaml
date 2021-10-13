@@ -1,6 +1,14 @@
-model:
-  path: 'model_training/model_checkpoint/fasterrcnn_resnet50_fpn.pth'
-  csv_path: 'data/rpc_train_dataframe_super.csv'
+experiment_n: 1
+seed: 42
+data:
+  data_path: '../data'
+  inference_data_path: './data'
+  csv_path: 'rpc_train_dataframe_super_tiny.csv'
   im_h: 128
   im_w: 128
   det_threshold: 0.7
+training:
+  max_lr: 1e-2
+  n_epochs: 2
+model:
+   path: 'model_training/saved_models/1_final_fasterrcnn_resnet50_fpn_2_epoch.pth'

@@ -3,13 +3,10 @@ from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 
-def get_model(num_classes, model_path):
-    # set the computation device
-    device = torch.device('cpu')
+def get_model(num_classes, model_path, device):
     # load the model and the trained weights
     model = get_detection_model(num_classes + 1).to(device)
-    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
-    model.eval()
+    model.load_state_dict(torch.load(model_path, map_location=torch.device(device)))
     return model
 
 

@@ -23,3 +23,6 @@ jupyter
 tqdm
 opencv-python
 albumentations
+kaggle==1.5.12
+uvicorn
+pytest==6.2.5

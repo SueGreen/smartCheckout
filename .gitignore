@@ -151,3 +151,6 @@ crashlytics-build.properties
 fabric.properties
 tmp
 data
+model_training/model_checkpoint
+model_training/saved_models
+.pytest_cache

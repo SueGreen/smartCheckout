@@ -14,23 +14,58 @@ from albumentations.augmentations.transforms import Equalize
 from albumentations.pytorch import ToTensorV2
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
+import numpy as np
+from PIL import Image, ImageDraw
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
+import torch
+from PIL import Image
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
+from loguru import logger
+from yaml import load
+
+from typing import Optional
+
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+
+from utils.utils import get_model, text_label
 from detector import ProductDataset, ProductDetectionTrainer
-
+from utils.utils import get_detection_model
 warnings.filterwarnings("ignore")
-seed = 42
 sns.set()
 
 
 def main():
-    # Read and preprocessed the data
-    data_path = Path('../data')
-    csv_path = Path('../data/rpc_train_dataframe_super_tiny.csv')
-    data = pd.read_csv(csv_path)
-    num_classes = data['labels'].nunique()
-    train_data, val_data = train_test_split(data, test_size=0.1, shuffle=True, random_state=seed)
+    # Parse config
+    config_path = '../config.yaml'
+    config = load(open(config_path))
+    experiment_n = config.get('experiment_n')
+    seed = config.get('seed')
+    data_params = config.get('data')
+    data_path = Path(data_params.get('data_path'))
+    image_height, image_width = int(data_params['im_h']), int(data_params['im_w'])
+    detection_threshold = float(data_params['det_threshold'])
+    csv_path = data_path / data_params['csv_path']
 
-    image_height, image_width = 128, 128
+    training_params = config.get('training')
+    max_lr = float(training_params.get('max_lr'))
+    n_epochs = int(training_params.get('n_epochs'))
+
+    model_config_params = config.get('model')
+    # inference_model_path = model_config_params.get('path')
+    inference_model_path = Path(f'saved_models/{experiment_n}_final_fasterrcnn_resnet50_fpn_{n_epochs}_epoch.pth')
+
+
+    # Read and preprocessed the data
+    data = pd.read_csv(csv_path)
+    n_classes = data['labels'].nunique()
+    # mapping = data.groupby(['labels', 'supercategory']).size().reset_index().rename(columns={0: 'count'})
+    train_data, val_data = train_test_split(data, test_size=0.1, shuffle=True, random_state=seed)
     dataset_format = 'pascal_voc'
     bbox_params = BboxParams(format=dataset_format,
                              min_visibility=0.3,
@@ -71,7 +106,7 @@ def main():
     val_dataset = ProductDataset(data_path / 'train2019', val_data,
                                  augment=None, transform=transform, dataset_format=dataset_format)
 
-    # train_dataset.show_dataset(sample_size=4, n=3)
+    train_dataset.show_dataset(sample_size=4, n=3)
 
     BATCH_SIZE = 2
     train_dataloader = torch.utils.data.DataLoader(
@@ -83,27 +118,21 @@ def main():
 
     # Train the model
     trainer = ProductDetectionTrainer()
-    experiment_n = 1
-    max_lr = 1e-1
-    n_epochs = 3
-    path_to_model_new = Path(f'saved_models/{experiment_n}fasterrcnn_resnet50_fpn_{n_epochs}_epoch.pth')
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = trainer.get_detection_model(num_classes + 1, pretrained=True)
+    model = get_detection_model(n_classes + 1)
     params = [v for k, v in model.named_parameters() if v.requires_grad]
-    optimizer = torch.optim.SGD(params, lr=max_lr, momentum=0.9, weight_decay=0.0005)
+    optimizer = torch.optim.SGD(params, lr=max_lr/10, momentum=0.9, weight_decay=0.0005)
     num_batches_train = len(train_dataloader)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, epochs=n_epochs,
                                                     steps_per_epoch=num_batches_train)
     model = model.to(device)
     best_val_auc = 0.0
-
     for epoch in range(n_epochs):
         model.eval()
         val_auc = trainer.evaluate(model, val_dataloader, device=device)
         if val_auc > best_val_auc:
             best_val_auc = val_auc
-            trainer.save_model(model, path_to_model_new)
+            trainer.save_model(model, inference_model_path)
         print(f'Epoch {epoch}. AUC ON VALIDATION: {round(float(val_auc), 4)}')
         model.train()
         train_loss = trainer.train(model, optimizer, train_dataloader, device=device, scheduler=scheduler)

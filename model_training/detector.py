@@ -337,20 +337,21 @@ class ProductDetectionTrainer():
         recall = np.zeros(len(results))
         precision = np.zeros(len(results))
 
-        if results is not None:
+        if results is not None and len(results) > 0:
             if results[0].get("TP") == 1:
                 acc_TP[0] = 1
             else:
                 acc_FP[0] = 1
 
-        for i in range(1, len(results)):
-            acc_TP[i] = results[i].get("TP") + acc_TP[i - 1]
-            acc_FP[i] = (1 - results[i].get("TP")) + acc_FP[i - 1]
+            for i in range(1, len(results)):
+                acc_TP[i] = results[i].get("TP") + acc_TP[i - 1]
+                acc_FP[i] = (1 - results[i].get("TP")) + acc_FP[i - 1]
 
-            precision[i] = acc_TP[i] / (acc_TP[i] + acc_FP[i])
-            recall[i] = acc_TP[i] / nbr_boxes
+                precision[i] = acc_TP[i] / (acc_TP[i] + acc_FP[i])
+                recall[i] = acc_TP[i] / nbr_boxes
 
-        return auc(recall, precision)
+            return auc(recall, precision)
+        return 0
 
     def train(self, model, optimizer, train_dataloader, device, scheduler=None):
         model.train()
@@ -381,13 +382,6 @@ class ProductDetectionTrainer():
     def save_model(self, model, model_save_path):
         torch.save(model.state_dict(), Path(model_save_path))
 
-    def get_detection_model(self, num_classes, pretrained=True):
-        model = fasterrcnn_resnet50_fpn(pretrained=pretrained, min_size=256, max_size=448)
-        # get the number of input features for the classifier
-        in_features = model.roi_heads.box_predictor.cls_score.in_features
-        # replace the pre-trained head with a new one
-        model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-        return model
 
     ## Code for model performance evaluation and training
     def visualize(self, train_data_loader):
